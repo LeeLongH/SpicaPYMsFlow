@@ -294,7 +294,7 @@ class AzureDevOpsHistoryAnalyzer:
     
 
 def main():
-    PAT = "CQmAK8C3rIW6t1pRJjMe8BiX9BYvy5i5psVSeJRELXUftC98w9I2JQQJ99BEACAAAAAiXuTxAAASAZDOcCsE"
+    PAT = PAT_TOKEN
 
     query_url = "https://dev.azure.com/Spica-International/All%20Hours/_queries/query/fd2005c3-8429-4d1f-a01e-40f2beeb21a7/"
     ORGANIZATION = re.search(r"(?<=dev\.azure\.com/)[^/]+", query_url).group(0)

@@ -14,6 +14,15 @@ class TaskGraphVisualizer:
             'high': '#EF4444',     # Red (5-8 transitions)
             'critical': '#000000'  # Black (9+ transitions)
         }
+        
+        # Define colors for different states
+        self.state_colors = {
+            'New': '#E5E7EB',          # Light gray
+            'Active': '#3B82F6',       # Blue
+            'Code Review': '#F59E0B',  # Amber
+            'Resolved': '#10B981',     # Green
+            'Closed': '#6B7280'        # Gray
+        }
     
     def get_bar_color(self, transition_count: int) -> str:
         """
@@ -51,11 +60,13 @@ class TaskGraphVisualizer:
         
         for state_name, info in task.state_info.items():
             state_names.append(state_name)
-            durations.append(round(info['total_time'], 2))
+            durations.append(int(round(info['total_time'])))
             counts.append(info['count'])
             colors.append(self.get_bar_color(info['count']))
         
+        print(durations)
         return state_names, durations, counts, colors
+    
     
     def create_state_duration_chart(self, task: Task, save_path: str = None, show_plot: bool = True) -> plt.Figure:
         """
@@ -72,7 +83,7 @@ class TaskGraphVisualizer:
         state_names, durations, counts, colors = self.prepare_chart_data(task)
         
         # Create figure and axis
-        fig, ax = plt.subplots(figsize=(12, 8))
+        fig, ax = plt.subplots(figsize=(9, 6))
         
         # Create bars with different colors
         bars = ax.bar(state_names, durations, color=colors, alpha=0.8, edgecolor='black', linewidth=1)
@@ -120,48 +131,6 @@ class TaskGraphVisualizer:
         
         return fig
     
-    def print_state_summary_table(self, task: Task):
-        """
-        Print a formatted table of state information
-        
-        Args:
-            task: Task object to summarize
-        """
-        print(f"\n{'='*60}")
-        print(f"TASK {task.id} STATE SUMMARY")
-        print(f"Title: {task.title}")
-        print(f"Current State: {task.current_state}")
-        print(f"{'='*60}")
-        
-        # Table header
-        print(f"{'State':<15} {'Days':<8} {'Hours':<8} {'Trans':<6} {'Color':<8}")
-        print(f"{'-'*15} {'-'*8} {'-'*8} {'-'*6} {'-'*8}")
-        
-        total_days = 0
-        total_transitions = 0
-        
-        for state_name, info in task.state_info.items():
-            days = info['total_time']
-            hours = days * 24
-            transitions = info['count']
-            color_desc = self._get_color_description(transitions)
-            
-            total_days += days
-            total_transitions += transitions
-            
-            print(f"{state_name:<15} {days:<8.2f} {hours:<8.1f} {transitions:<6} {color_desc:<8}")
-        
-        print(f"{'-'*15} {'-'*8} {'-'*8} {'-'*6} {'-'*8}")
-        print(f"{'TOTAL':<15} {total_days:<8.2f} {total_days*24:<8.1f} {total_transitions:<6}")
-        
-        # Additional metrics
-        if task.cycle_time:
-            print(f"\nCycle Time: {task.cycle_time} days")
-        if task.lead_time:
-            print(f"Lead Time: {task.lead_time} days")
-        
-        print(f"{'='*60}\n")
-    
     def _get_color_description(self, count: int) -> str:
         """Get color description based on transition count"""
         if count >= 9:
@@ -175,11 +144,11 @@ class TaskGraphVisualizer:
     
     def create_stacked_state_comparison_by_task(self, tasks: List[Task], save_path: str = None, show_plot: bool = True):
         """
-        Create a stacked bar chart showing how much time different tasks spent in each state.
+        Create a stacked bar chart with Task IDs on X-axis and stacked states showing time duration.
         
-        X-axis: States
+        X-axis: Task IDs
         Y-axis: Duration (Days)
-        Stacks: Different tasks
+        Stacks: Different states (New, Active, Code Review, Resolved, Closed)
 
         Args:
             tasks: List of Task objects
@@ -190,49 +159,87 @@ class TaskGraphVisualizer:
             print("No tasks provided for comparison")
             return
 
-        custom_order = ['New', 'Active', 'Code Review', 'Resolved', 'Closed']
+        # Define the order of states for consistent stacking
+        state_order = ['New', 'Active', 'Code Review', 'Resolved', 'Closed']
+        
+        # Get all states that actually exist in the tasks
         all_found_states = {state for task in tasks for state in task.state_info}
-        all_states = [state for state in custom_order if state in all_found_states]
+        ordered_states = [state for state in state_order if state in all_found_states]
+        
+        # Add any additional states not in our predefined order
+        additional_states = [state for state in all_found_states if state not in state_order]
+        ordered_states.extend(additional_states)
 
+        # Prepare data
         task_ids = [str(task.id) for task in tasks]
-
-        # Build data: state -> list of durations per task
-        state_data = {state: [] for state in all_states}
-        for state in all_states:
+        
+        # Create a matrix: rows = states, columns = tasks
+        state_durations = {}
+        for state in reversed(ordered_states):
+            state_durations[state] = []
             for task in tasks:
                 info = task.state_info.get(state)
-                duration = round(info['total_time'], 2) if info else 0
-                state_data[state].append(duration)
+                duration = int(round(info['total_time'])) if info else 0
+                state_durations[state].append(duration)
 
-        # Plot
-        fig, ax = plt.subplots(figsize=(14, 8))
-        bottom = np.zeros(len(all_states))  # one bar per state
-        task_colors = plt.cm.get_cmap("tab20", len(tasks))  # distinct colors per task
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(max(9, len(tasks) * 0.7), 6))
+        
+        # Initialize bottom array for stacking
+        bottom = np.zeros(len(tasks))
+        
+        # Create stacked bars
+        bars = []
+        for state in reversed(ordered_states):
+            durations = state_durations[state]
+            color = self.state_colors.get(state, '#8B5CF6')  # Default purple if state not defined
+            
+            bar = ax.bar(task_ids, durations, bottom=bottom, 
+                        label=state, color=color, 
+                        edgecolor='black', linewidth=0.5, alpha=0.8)
+            bars.append(bar)
+            bottom += np.array(durations)
 
-        for idx, task in enumerate(tasks):
-            heights = [state_data[state][idx] for state in all_states]
-            ax.bar(all_states, heights, bottom=bottom, label=f'Task {task.id}',
-                color=task_colors(idx), edgecolor='black', linewidth=0.5)
-            bottom += np.array(heights)
-
-        ax.set_xlabel('State', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Total Duration (Days)', fontsize=12, fontweight='bold')
-        ax.set_title('State-wise Stacked Duration by Task', fontsize=14, fontweight='bold')
-        ax.legend(title="Tasks", bbox_to_anchor=(1.05, 1), loc='upper left')
+        # Customize the chart
+        ax.set_xlabel('Task ID', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Duration (Days)', fontsize=12, fontweight='bold')
+        ax.set_title('Time Spent in Each State by Task', fontsize=14, fontweight='bold')
+        
+        # Add legend
+        ax.legend(title="States", bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Add grid for better readability
         ax.grid(True, axis='y', alpha=0.3)
-        plt.xticks(rotation=45, ha='right')
+        ax.set_axisbelow(True)
+        
+        # Rotate x-axis labels if there are many tasks
+        if len(tasks) > 10:
+            plt.xticks(rotation=45, ha='right')
+        
+        # Add total duration labels on top of each bar
+        for i, task in enumerate(tasks):
+            total_duration = sum(state_durations[state][i] for state in ordered_states)
+            if total_duration > 0:
+                ax.text(i, total_duration + max(bottom) * 0.01, 
+                       f'{total_duration}', 
+                       ha='center', va='bottom', fontsize=9, fontweight='bold')
+        
+        # Adjust y-axis to prevent label cutoff
+        max_total = max(sum(state_durations[state][i] for state in ordered_states) for i in range(len(tasks)))
+        ax.set_ylim(0, max_total * 1.1)  # 10% padding above highest stack
+
         plt.tight_layout()
 
+        # Save if path provided
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"Stacked state chart saved to: {save_path}")
 
+        # Show plot if requested
         if show_plot:
             plt.show()
 
         return fig
-
-
     
     def visualize_task(self, task: Task, save_path: str = None, show_summary: bool = True, show_chart: bool = True):
         """
